@@ -3,81 +3,114 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Panel Administrativo - Ofertas Super</title>
+  <title>Panel Administrativo - Ofertas Supermercado</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <link rel="stylesheet" href="./css/styles.css">
+  <link rel="stylesheet" href="./css/admin.css" />
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.12.1/font/bootstrap-icons.min.css" />
+  <style>
+    .producto-row > * {
+      vertical-align: middle;
+    }
+  </style>
 </head>
 <body>
-  <div class="container py-4">
-    <h1 class="mb-4">Panel Administrativo</h1>
-
-    <!-- Registro -->
-    <section id="registro-section" class="mb-5">
-      <h3>Registrar Nuevo Administrador</h3>
-      <form id="form-registro">
-        <input type="email" id="reg-email" class="form-control mb-2" placeholder="Correo electrónico" required autocomplete="email" />
-        <input type="password" id="reg-password" class="form-control mb-2" placeholder="Contraseña" required autocomplete="new-password" />
-        <button type="submit" class="btn btn-secondary">Registrar</button>
+  <div class="container py-5" style="max-width: 900px;">
+    <!-- LOGIN -->
+    <div id="login-section" class="mb-4">
+      <h3 class="mb-4 text-center">Iniciar Sesión</h3>
+      <div id="login-alert"></div>
+      <form id="form-login" class="mb-3">
+        <div class="mb-3">
+          <label for="login-email" class="form-label">Correo electrónico</label>
+          <input type="email" id="login-email" class="form-control" placeholder="Correo electrónico" required />
+        </div>
+        <div class="mb-3">
+          <label for="login-password" class="form-label">Contraseña</label>
+          <input type="password" id="login-password" class="form-control" placeholder="Contraseña" required />
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Entrar</button>
       </form>
-      <div id="registro-error" class="text-danger mt-2"></div>
-      <div id="registro-exito" class="text-success mt-2"></div>
-    </section>
+    </div>
 
-    <!-- Login -->
-    <section id="login-section" class="mb-5">
-      <h3>Iniciar Sesión</h3>
-      <form id="form-login">
-        <input type="email" id="email" class="form-control mb-2" placeholder="Correo electrónico" required autocomplete="email" />
-        <input type="password" id="password" class="form-control mb-2" placeholder="Contraseña" required autocomplete="current-password" />
-        <button type="submit" class="btn btn-primary">Entrar</button>
-      </form>
-      <div id="login-error" class="text-danger mt-2"></div>
-    </section>
+    <!-- PANEL ADMIN -->
+    <div id="admin-panel" style="display:none;">
+      <h1 class="mb-4 text-center">Panel Administrativo - Gestión de Ofertas</h1>
 
-    <!-- Panel admin -->
-    <section id="admin-panel" style="display:none;">
-      <button id="btn-logout" class="btn btn-danger mb-4">Cerrar sesión</button>
+      <div id="user-info" class="mb-4 text-center fw-bold fs-5 text-primary"></div>
 
-      <!-- Formulario Oferta -->
-      <h3>Agregar / Editar Oferta</h3>
-      <form id="form-oferta" class="mb-4">
-        <input type="text" id="nombre" class="form-control mb-2" placeholder="Nombre del producto" required />
-        <input type="text" id="supermercado" class="form-control mb-2" placeholder="Supermercado" required />
-        <input type="number" id="precio" class="form-control mb-2" placeholder="Precio" required />
-        <input type="number" id="precioOriginal" class="form-control mb-2" placeholder="Precio original" required />
-        <input type="date" id="vence" class="form-control mb-2" required />
-        <input type="url" id="imagen" class="form-control mb-2" placeholder="URL de la imagen" required />
-        <button type="submit" class="btn btn-success">Guardar Oferta</button>
-        <button type="button" id="btn-cancelar-edicion" class="btn btn-secondary ms-2 d-none">Cancelar Edición</button>
-      </form>
+      <div class="card mb-4">
+        <div class="card-header">
+          <h4>Crear / Editar Oferta</h4>
+        </div>
+        <div class="card-body">
+          <form id="form-oferta">
+            <div class="mb-3">
+              <label for="titulo" class="form-label">Título de la oferta</label>
+              <input type="text" id="titulo" class="form-control" placeholder="Ej: Promoción en frutas frescas" required />
+            </div>
+            <div class="mb-3">
+              <label for="descripcion" class="form-label">Descripción general</label>
+              <textarea id="descripcion" class="form-control" rows="2" placeholder="Descripción de la oferta" required></textarea>
+            </div>
+            <div class="mb-3">
+              <label for="categoria" class="form-label">Categoría</label>
+              <input type="text" id="categoria" class="form-control" placeholder="Ej: Frutas, Lácteos, Bebidas" required />
+            </div>
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <label for="fechaInicio" class="form-label">Fecha de inicio</label>
+                <input type="date" id="fechaInicio" class="form-control" required />
+              </div>
+              <div class="col-md-6">
+                <label for="fechaFin" class="form-label">Fecha de fin</label>
+                <input type="date" id="fechaFin" class="form-control" required />
+              </div>
+            </div>
 
-      <h3>Ofertas Existentes</h3>
-      <div id="lista-ofertas" class="row"></div>
+            <hr />
+            <h5>Productos en la oferta</h5>
+            <table class="table table-bordered" id="tabla-productos">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Descripción</th>
+                  <th>Precio Original</th>
+                  <th>Precio Oferta</th>
+                  <th>Por</th>
+                  <th>Stock</th>
+                  <th>Fecha Vencimiento</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="productos-body">
+                <!-- Productos aquí -->
+              </tbody>
+            </table>
+            <button type="button" id="btn-agregar-producto" class="btn btn-secondary mb-3">Agregar Producto</button>
 
-      <hr class="my-4" />
+            <div class="mb-3">
+              <label for="imagenURL" class="form-label">URL imagen oferta (opcional)</label>
+              <input type="url" id="imagenURL" class="form-control" placeholder="URL de la imagen representativa" />
+            </div>
 
-      <!-- Banners -->
-      <h3>Gestionar Banners</h3>
-      <form id="form-banner" class="mb-4">
-        <input type="url" id="banner-imagen" class="form-control mb-2" placeholder="URL de la imagen del banner" required />
-        <input type="text" id="banner-alt" class="form-control mb-2" placeholder="Texto alternativo" required />
-        <button type="submit" class="btn btn-success">Agregar Banner</button>
-      </form>
-      <div id="lista-banners" class="row"></div>
-    </section>
-  </div>
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary flex-grow-1">Guardar Oferta</button>
+              <button type="button" id="btn-cancelar" class="btn btn-outline-secondary flex-grow-1" style="display:none;">Cancelar Edición</button>
+            </div>
+          </form>
+        </div>
+      </div>
 
-  <!-- Toast Bootstrap -->
-  <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
-    <div id="toastMensaje" class="toast align-items-center text-bg-primary border-0" role="alert" aria-live="assertive" aria-atomic="true">
-      <div class="d-flex">
-        <div class="toast-body" id="toast-body"></div>
-        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Cerrar"></button>
+      <h3>Ofertas existentes</h3>
+      <div id="lista-ofertas" class="row gy-4"></div>
+
+      <div class="mt-4 text-center">
+        <button id="btn-logout" class="btn btn-danger">Cerrar sesión</button>
       </div>
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script type="module" src="./js/main.js"></script>
 </body>
 </html>

@@ -4,20 +4,22 @@ import {
   collection,
   addDoc,
   getDocs,
-  deleteDoc,
   doc,
   getDoc,
   updateDoc,
+  deleteDoc,
+  query,
+  where,
+  serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/11.7.1/firebase-firestore.js";
 import {
   getAuth,
   signInWithEmailAndPassword,
   onAuthStateChanged,
   signOut,
-  createUserWithEmailAndPassword,
 } from "https://www.gstatic.com/firebasejs/11.7.1/firebase-auth.js";
 
-// Configuración Firebase
+// Configuración Firebase (usa la tuya)
 const firebaseConfig = {
   apiKey: "AIzaSyActULR2Fqu4F3A_A1TUOXQbfrORZecqiI",
   authDomain: "ofertassuper-a9841.firebaseapp.com",
@@ -25,121 +27,256 @@ const firebaseConfig = {
   storageBucket: "ofertassuper-a9841.appspot.com",
   messagingSenderId: "29615340161",
   appId: "1:29615340161:web:bbca60564936cdc9e1ab80",
-  measurementId: "G-5EZQTLGX26",
 };
 
-// Inicializa Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// Elementos DOM
-const registroSection = document.getElementById("registro-section");
+// DOM Elements
 const loginSection = document.getElementById("login-section");
+const formLogin = document.getElementById("form-login");
+const loginAlert = document.getElementById("login-alert");
+
 const adminPanel = document.getElementById("admin-panel");
-
-const btnRegistrar = document.getElementById("btn-registrar");
-const registroError = document.getElementById("registro-error");
-const registroExito = document.getElementById("registro-exito");
-
-const btnLogin = document.getElementById("btn-login");
-const loginError = document.getElementById("login-error");
-
-const btnLogout = document.getElementById("btn-logout");
-
+const userInfo = document.getElementById("user-info");
 const formOferta = document.getElementById("form-oferta");
 const listaOfertas = document.getElementById("lista-ofertas");
+const btnAgregarProducto = document.getElementById("btn-agregar-producto");
+const productosBody = document.getElementById("productos-body");
+const btnCancelar = document.getElementById("btn-cancelar");
+const btnLogout = document.getElementById("btn-logout");
 
-const btnCancelarEdicion = document.getElementById("btn-cancelar-edicion");
+let idEditar = null;
+let supermercadoActual = null; // { id, nombre, direccion }
 
-// Registro de usuario
-btnRegistrar.addEventListener("click", () => {
-  const email = document.getElementById("reg-email").value.trim();
-  const password = document.getElementById("reg-password").value.trim();
+// Mostrar alertas Bootstrap
+function mostrarAlerta(contenedor, mensaje, tipo = "danger") {
+  contenedor.innerHTML = `
+    <div class="alert alert-${tipo} alert-dismissible fade show" role="alert">
+      ${mensaje}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+    </div>
+  `;
+  setTimeout(() => { contenedor.innerHTML = ""; }, 4000);
+}
 
-  registroError.textContent = "";
-  registroExito.textContent = "";
+// LOGIN
+formLogin.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value.trim();
 
-  createUserWithEmailAndPassword(auth, email, password)
-    .then(() => {
-      registroExito.textContent = "Usuario registrado exitosamente. Ya puedes iniciar sesión.";
-      document.getElementById("reg-email").value = "";
-      document.getElementById("reg-password").value = "";
-    })
-    .catch((error) => {
-      registroError.textContent = "Error al registrar: " + error.message;
-    });
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+  } catch (error) {
+    mostrarAlerta(loginAlert, "Error al iniciar sesión: " + error.message);
+  }
 });
 
-// Login usuario
-btnLogin.addEventListener("click", () => {
-  const email = document.getElementById("email").value.trim();
-  const password = document.getElementById("password").value.trim();
-
-  loginError.textContent = "";
-
-  signInWithEmailAndPassword(auth, email, password)
-    .catch((error) => {
-      loginError.textContent = "Error al iniciar sesión: " + error.message;
-    });
-});
-
-// Logout
-btnLogout.addEventListener("click", () => {
-  signOut(auth);
-});
-
-// Estado de autenticación
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
   if (user) {
-    registroSection.style.display = "none";
-    loginSection.style.display = "none";
-    adminPanel.style.display = "block";
-    cargarOfertas();
-    cargarBanners();
+    try {
+      const userDoc = await getDoc(doc(db, "usuarios", user.uid));
+      if (!userDoc.exists()) {
+        alert("Usuario no tiene supermercado asignado");
+        await signOut(auth);
+        return;
+      }
+      const userData = userDoc.data();
+
+      const supermercadoDoc = await getDoc(doc(db, "supermercados", userData.supermercadoId));
+      if (!supermercadoDoc.exists()) {
+        alert("Supermercado asignado no existe o fue eliminado");
+        await signOut(auth);
+        return;
+      }
+      const supermercadoData = supermercadoDoc.data();
+
+      supermercadoActual = {
+        id: userData.supermercadoId,
+        nombre: supermercadoData.nombre || "Supermercado",
+        direccion: supermercadoData.direccion || "Dirección no disponible",
+      };
+
+      userInfo.textContent = `Supermercado: ${supermercadoActual.nombre} - Ubicación: ${supermercadoActual.direccion}`;
+
+      loginSection.style.display = "none";
+      adminPanel.style.display = "block";
+
+      limpiarFormulario();
+      await desactivarOfertasExpiradas();
+      cargarOfertas();
+    } catch (error) {
+      alert("Error al cargar datos: " + error.message);
+      await signOut(auth);
+    }
   } else {
-    registroSection.style.display = "block";
     loginSection.style.display = "block";
     adminPanel.style.display = "none";
+    userInfo.textContent = "";
     listaOfertas.innerHTML = "";
-    listaBanners.innerHTML = "";
     limpiarFormulario();
   }
 });
 
-// Variables para edición
-let idEditar = null;
-
-// Función para limpiar formulario
+// Limpiar formulario y tabla productos
 function limpiarFormulario() {
   formOferta.reset();
   idEditar = null;
-  btnCancelarEdicion.style.display = "none";
-  formOferta.querySelector("button[type=submit]").textContent = "Guardar Oferta";
+  btnCancelar.style.display = "none";
+  productosBody.innerHTML = "";
+  agregarProductoFila();
 }
 
-// Agregar o actualizar oferta
+// Agregar fila producto vacía o con datos
+function agregarProductoFila(producto = {}) {
+  const tr = document.createElement("tr");
+  tr.classList.add("producto-row");
+  tr.innerHTML = `
+    <td><input type="text" class="form-control producto-nombre" placeholder="Nombre" value="${producto.nombre || ''}" required></td>
+    <td><input type="text" class="form-control producto-descripcion" placeholder="Descripción" value="${producto.descripcion || ''}"></td>
+    <td><input type="number" class="form-control producto-precioOriginal" placeholder="Precio original" min="0" step="0.01" value="${producto.precioOriginal || ''}" required></td>
+    <td><input type="number" class="form-control producto-precioOferta" placeholder="Precio oferta" min="0" step="0.01" value="${producto.precioOferta || ''}" required></td>
+    <td><input type="text" class="form-control producto-unidad" placeholder="Unidad (kg, unidad...)" value="${producto.unidad || ''}" required></td>
+    <td><input type="number" class="form-control producto-stock" placeholder="Stock" min="0" step="1" value="${producto.stockDisponible || ''}" required></td>
+    <td><input type="date" class="form-control producto-fechaVencimiento" value="${producto.fechaVencimiento ? producto.fechaVencimiento.split('T')[0] : ''}" required></td>
+    <td><button type="button" class="btn btn-danger btn-sm btn-eliminar-producto" title="Eliminar producto"><i class="bi bi-trash"></i></button></td>
+  `;
+  productosBody.appendChild(tr);
+
+  tr.querySelector(".btn-eliminar-producto").addEventListener("click", () => {
+    tr.remove();
+  });
+}
+
+btnAgregarProducto.addEventListener("click", () => {
+  agregarProductoFila();
+});
+
+// Función para desactivar ofertas expiradas
+async function desactivarOfertasExpiradas() {
+  if (!supermercadoActual) return;
+
+  const hoy = new Date();
+
+  try {
+    const q = query(
+      collection(db, "ofertas"),
+      where("supermercadoId", "==", supermercadoActual.id),
+      where("activo", "==", true)
+    );
+    const snapshot = await getDocs(q);
+
+    const updates = [];
+
+    snapshot.forEach((docSnap) => {
+      const oferta = docSnap.data();
+      let fechaFin;
+
+      if (oferta.fechaFin && oferta.fechaFin.toDate) {
+        fechaFin = oferta.fechaFin.toDate();
+      } else {
+        fechaFin = new Date(oferta.fechaFin);
+      }
+
+      if (fechaFin < hoy) {
+        const docRef = doc(db, "ofertas", docSnap.id);
+        updates.push(updateDoc(docRef, { activo: false }));
+      }
+    });
+
+    await Promise.all(updates);
+  } catch (error) {
+    console.error("Error desactivando ofertas expiradas:", error);
+  }
+}
+
+// Guardar o actualizar oferta
 formOferta.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  const ofertaData = {
-    nombre: document.getElementById("nombre").value.trim(),
-    supermercado: document.getElementById("supermercado").value.trim(),
-    precio: Number(document.getElementById("precio").value),
-    precioOriginal: Number(document.getElementById("precioOriginal").value),
-    vence: document.getElementById("vence").value,
-    imagen: document.getElementById("imagen").value.trim(),
-  };
+  const filasProductos = productosBody.querySelectorAll("tr");
+  if (filasProductos.length === 0) {
+    alert("Debe agregar al menos un producto.");
+    return;
+  }
+
+  const titulo = document.getElementById("titulo").value.trim();
+  const descripcion = document.getElementById("descripcion").value.trim();
+  const categoria = document.getElementById("categoria").value.trim();
+  const fechaInicio = new Date(document.getElementById("fechaInicio").value).toISOString();
+  const fechaFin = new Date(document.getElementById("fechaFin").value).toISOString();
+  const imagenURL = document.getElementById("imagenURL").value.trim() || null;
 
   try {
     if (idEditar) {
       const docRef = doc(db, "ofertas", idEditar);
-      await updateDoc(docRef, ofertaData);
+      const originalDoc = await getDoc(docRef);
+      if (!originalDoc.exists()) {
+        alert("La oferta a editar no existe.");
+        return;
+      }
+      const fila = filasProductos[0];
+      const producto = {
+        nombre: fila.querySelector(".producto-nombre").value.trim(),
+        descripcion: fila.querySelector(".producto-descripcion").value.trim(),
+        precioOriginal: parseFloat(fila.querySelector(".producto-precioOriginal").value),
+        precioOferta: parseFloat(fila.querySelector(".producto-precioOferta").value),
+        unidad: fila.querySelector(".producto-unidad").value.trim(),
+        stockDisponible: parseInt(fila.querySelector(".producto-stock").value),
+        fechaVencimiento: new Date(fila.querySelector(".producto-fechaVencimiento").value).toISOString(),
+      };
+      await updateDoc(docRef, {
+        supermercadoId: supermercadoActual.id,
+        titulo,
+        descripcion,
+        categoria,
+        fechaInicio,
+        fechaFin,
+        productos: [producto],
+        activo: true,
+        imagenURL,
+        fechaCreacion: originalDoc.data().fechaCreacion,
+        fechaActualizacion: serverTimestamp(),
+      });
       alert("Oferta actualizada correctamente.");
     } else {
-      await addDoc(collection(db, "ofertas"), ofertaData);
-      alert("Oferta agregada correctamente.");
+      for (const fila of filasProductos) {
+        const producto = {
+          nombre: fila.querySelector(".producto-nombre").value.trim(),
+          descripcion: fila.querySelector(".producto-descripcion").value.trim(),
+          precioOriginal: parseFloat(fila.querySelector(".producto-precioOriginal").value),
+          precioOferta: parseFloat(fila.querySelector(".producto-precioOferta").value),
+          unidad: fila.querySelector(".producto-unidad").value.trim(),
+          stockDisponible: parseInt(fila.querySelector(".producto-stock").value),
+          fechaVencimiento: new Date(fila.querySelector(".producto-fechaVencimiento").value).toISOString(),
+        };
+
+        if (!producto.nombre || isNaN(producto.precioOriginal) || isNaN(producto.precioOferta) || !producto.unidad || isNaN(producto.stockDisponible) || !producto.fechaVencimiento) {
+          alert("Completa todos los campos requeridos de los productos correctamente.");
+          return;
+        }
+
+        const ofertaData = {
+          supermercadoId: supermercadoActual.id,
+          titulo,
+          descripcion,
+          categoria,
+          fechaInicio,
+          fechaFin,
+          productos: [producto],
+          activo: true,
+          imagenURL,
+          fechaCreacion: serverTimestamp(),
+          fechaActualizacion: serverTimestamp(),
+        };
+
+        await addDoc(collection(db, "ofertas"), ofertaData);
+      }
+      alert("Ofertas creadas correctamente.");
     }
+
     limpiarFormulario();
     cargarOfertas();
   } catch (error) {
@@ -147,32 +284,70 @@ formOferta.addEventListener("submit", async (e) => {
   }
 });
 
-// Cancelar edición
-btnCancelarEdicion.addEventListener("click", () => {
-  limpiarFormulario();
-});
-
-// Cargar ofertas y mostrarlas
+// Cargar ofertas del supermercado actual
 async function cargarOfertas() {
   listaOfertas.innerHTML = "";
+  if (!supermercadoActual) return;
+
   try {
-    const querySnapshot = await getDocs(collection(db, "ofertas"));
+    const q = query(
+      collection(db, "ofertas"),
+      where("supermercadoId", "==", supermercadoActual.id),
+      where("activo", "==", true)
+    );
+    const querySnapshot = await getDocs(q);
+    if (querySnapshot.empty) {
+      listaOfertas.innerHTML = "<p>No hay ofertas registradas.</p>";
+      return;
+    }
+
     querySnapshot.forEach((docSnap) => {
       const oferta = docSnap.data();
       const id = docSnap.id;
 
       const card = document.createElement("div");
-      card.className = "col-12 col-md-6 mb-3";
+      card.className = "col-12";
       card.innerHTML = `
-        <div class="card">
-          <div style="background-image: url('${oferta.imagen}'); height: 200px; background-size: cover; background-position: center; border-radius: 10px;"></div>
+        <div class="card shadow-sm mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">${oferta.titulo}</h5>
+            <div>
+              <button class="btn btn-sm btn-primary btn-editar" data-id="${id}" title="Editar"><i class="bi bi-pencil"></i></button>
+              <button class="btn btn-sm btn-danger btn-eliminar" data-id="${id}" title="Eliminar"><i class="bi bi-trash"></i></button>
+            </div>
+          </div>
           <div class="card-body">
-            <h5>${oferta.nombre}</h5>
-            <p>Supermercado: ${oferta.supermercado}</p>
-            <p>Precio: <span style="color:#bdaaf7;">$${oferta.precio}</span> <del>$${oferta.precioOriginal}</del></p>
-            <p>Vence: <b>${oferta.vence}</b></p>
-            <button class="btn btn-primary btn-sm btn-editar" data-id="${id}">Editar</button>
-            <button class="btn btn-danger btn-sm btn-eliminar" data-id="${id}">Eliminar</button>
+            <p><strong>Descripción:</strong> ${oferta.descripcion}</p>
+            <p><strong>Categoría:</strong> ${oferta.categoria}</p>
+            <p><strong>Vigencia:</strong> ${new Date(oferta.fechaInicio).toLocaleDateString()} - ${new Date(oferta.fechaFin).toLocaleDateString()}</p>
+            ${oferta.imagenURL ? `<img src="${oferta.imagenURL}" alt="Imagen oferta" class="img-fluid rounded mb-3" style="max-height:200px;">` : ""}
+            <h6>Producto:</h6>
+            <table class="table table-sm table-bordered">
+              <thead>
+                <tr>
+                  <th style="text-align: center;">Producto</th>
+                  <th style="text-align: center;">Descripción</th>
+                  <th style="text-align: center;">Precio Original</th>
+                  <th style="text-align: center;">Precio Oferta</th>
+                  <th style="text-align: center;">Por</th>
+                  <th style="text-align: center;">Stock</th>
+                  <th style="text-align: center;">Fecha Vencimiento</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${oferta.productos.map(p => `
+                  <tr>
+                    <td style="text-align: center;">${p.nombre}</td>
+                    <td style="text-align: center;">${p.descripcion || ""}</td>
+                    <td style="text-align: center;">Q${p.precioOriginal.toFixed(2)}</td>
+                    <td style="text-align: center;">Q${p.precioOferta.toFixed(2)}</td>
+                    <td style="text-align: center;">${p.unidad}</td>
+                    <td style="text-align: center;">${p.stockDisponible}</td>
+                    <td style="text-align: center;">${new Date(p.fechaVencimiento).toLocaleDateString()}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
           </div>
         </div>
       `;
@@ -180,21 +355,22 @@ async function cargarOfertas() {
       listaOfertas.appendChild(card);
     });
 
-    // Eventos para botones editar
-    document.querySelectorAll(".btn-editar").forEach((btn) => {
+    // Eventos editar
+    document.querySelectorAll(".btn-editar").forEach(btn => {
       btn.addEventListener("click", async (e) => {
-        const id = e.target.dataset.id;
+        const id = e.currentTarget.dataset.id;
         await cargarOfertaParaEditar(id);
       });
     });
 
-    // Eventos para botones eliminar
-    document.querySelectorAll(".btn-eliminar").forEach((btn) => {
+    // Eventos eliminar
+    document.querySelectorAll(".btn-eliminar").forEach(btn => {
       btn.addEventListener("click", async (e) => {
-        const id = e.target.dataset.id;
-        if (confirm("¿Seguro que quieres eliminar esta oferta?")) {
+        const id = e.currentTarget.dataset.id;
+        if (confirm("¿Está seguro de eliminar esta oferta?")) {
           try {
             await deleteDoc(doc(db, "ofertas", id));
+            alert("Oferta eliminada.");
             cargarOfertas();
           } catch (error) {
             alert("Error al eliminar oferta: " + error.message);
@@ -203,85 +379,46 @@ async function cargarOfertas() {
       });
     });
   } catch (error) {
-    alert("Error al cargar ofertas: " + error.message);
+    listaOfertas.innerHTML = `<p class="text-danger">Error cargando ofertas: ${error.message}</p>`;
   }
 }
 
 // Cargar oferta para editar
 async function cargarOfertaParaEditar(id) {
-  const docRef = doc(db, "ofertas", id);
-  const docSnap = await getDoc(docRef);
-  if (docSnap.exists()) {
+  try {
+    const docRef = doc(db, "ofertas", id);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) {
+      alert("Oferta no encontrada");
+      return;
+    }
     const oferta = docSnap.data();
-    document.getElementById("nombre").value = oferta.nombre;
-    document.getElementById("supermercado").value = oferta.supermercado;
-    document.getElementById("precio").value = oferta.precio;
-    document.getElementById("precioOriginal").value = oferta.precioOriginal;
-    document.getElementById("vence").value = oferta.vence;
-    document.getElementById("imagen").value = oferta.imagen;
+
+    document.getElementById("titulo").value = oferta.titulo;
+    document.getElementById("descripcion").value = oferta.descripcion;
+    document.getElementById("categoria").value = oferta.categoria;
+    document.getElementById("fechaInicio").value = oferta.fechaInicio.split("T")[0];
+    document.getElementById("fechaFin").value = oferta.fechaFin.split("T")[0];
+    document.getElementById("imagenURL").value = oferta.imagenURL || "";
+
+    productosBody.innerHTML = "";
+    oferta.productos.forEach(p => agregarProductoFila(p));
 
     idEditar = id;
-    btnCancelarEdicion.style.display = "inline-block";
-    formOferta.querySelector("button[type=submit]").textContent = "Actualizar Oferta";
+    btnCancelar.style.display = "inline-block";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch (error) {
+    alert("Error cargando oferta: " + error.message);
   }
 }
 
-// Gestión de banners
-const formBanner = document.getElementById("form-banner");
-const listaBanners = document.getElementById("lista-banners");
-
-formBanner.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const imagen = document.getElementById("banner-imagen").value.trim();
-  const alt = document.getElementById("banner-alt").value.trim();
-
-  try {
-    await addDoc(collection(db, "banners"), { imagen, alt });
-    formBanner.reset();
-    cargarBanners();
-  } catch (error) {
-    alert("Error al agregar banner: " + error.message);
-  }
+// Cancelar edición
+btnCancelar.addEventListener("click", () => {
+  limpiarFormulario();
 });
 
-async function cargarBanners() {
-  listaBanners.innerHTML = "";
-  try {
-    const querySnapshot = await getDocs(collection(db, "banners"));
-    querySnapshot.forEach((docSnap) => {
-      const banner = docSnap.data();
-      const id = docSnap.id;
-
-      const card = document.createElement("div");
-      card.className = "col-12 col-md-4 mb-3";
-      card.innerHTML = `
-        <div class="card">
-          <img src="${banner.imagen}" alt="${banner.alt}" class="card-img-top" style="height:150px; object-fit:cover; border-radius:10px;">
-          <div class="card-body">
-            <p>${banner.alt}</p>
-            <button class="btn btn-danger btn-sm btn-eliminar-banner" data-id="${id}">Eliminar</button>
-          </div>
-        </div>
-      `;
-      listaBanners.appendChild(card);
-    });
-
-    // Eventos eliminar banner
-    document.querySelectorAll(".btn-eliminar-banner").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        const id = e.target.dataset.id;
-        if (confirm("¿Seguro que quieres eliminar este banner?")) {
-          try {
-            await deleteDoc(doc(db, "banners", id));
-            cargarBanners();
-          } catch (error) {
-            alert("Error al eliminar banner: " + error.message);
-          }
-        }
-      });
-    });
-  } catch (error) {
-    alert("Error al cargar banners: " + error.message);
-  }
-}
-
+// Cerrar sesión
+btnLogout.addEventListener("click", async () => {
+  await signOut(auth);
+  location.reload();
+});
